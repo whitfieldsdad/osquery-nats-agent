@@ -36,7 +36,7 @@ An agent written in Go that:
 
 ## Goals
 
-- Simplify the process of performing distributed event tracing across multiple endpoints - particularly in environments without administrative privileges and in ephemeral environments where endpoints may frequently appear and disappear.
+- Simplify the process of performing distributed event tracing across multiple endpoints - particularly in environments without administrative privileges and in ephemeral environments where endpoints may frequently appear and disappear
 
 ## Usage
 
