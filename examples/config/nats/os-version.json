@@ -1,0 +1,15 @@
+{
+  "nats_url": "nats://localhost:4222",
+  "input_subjects": [
+    "osquery.queries"
+  ],
+  "output_subjects": [
+    "osquery.results"
+  ],
+  "scheduled_queries": [
+        {
+            "query": "SELECT name, version FROM os_version;",
+            "interval": 60
+        }
+    ]
+}

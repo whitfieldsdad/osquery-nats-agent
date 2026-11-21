@@ -1,0 +1,35 @@
+nats_url: nats://127.0.0.1:4222
+input_subjects:
+  - osquery.queries
+output_subjects:
+  - osquery.results
+query_timeout: 60s
+scheduled_queries:
+  - query: |
+      SELECT
+          pid,
+          parent AS ppid,
+          "name",
+          "path",
+          "cmdline" AS command_line,
+          "state",
+          "cwd",
+          "start_time"
+      FROM processes;
+    interval: 15
+    platforms: [darwin, linux, windows]
+  - query: |
+      SELECT
+          p.pid,
+          p.parent AS ppid,
+          p."name",
+          p."path",
+          p."cmdline" AS command_line,
+          h.md5,
+          h.sha1,
+          h.sha256
+      FROM processes p
+      JOIN "file" f ON p.path = f.path
+      JOIN "hash" h ON f.path = h.path;
+    interval: 15
+    platforms: [darwin, linux, windows]

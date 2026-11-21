@@ -11,10 +11,12 @@ digraph G {
     subgraph cluster_agent {
         label="Agent";
 
-        osquery_nats_sidecar [label="osquery/NATS sidecar"];
+        osquery_nats_agent [label="osquery/NATS agent"];
         osqueryi;
+        files [label="File(s)"];
 
-        osquery_nats_sidecar -> nats_service;
-        osquery_nats_sidecar -> osqueryi;
+        osquery_nats_agent -> osqueryi;
+        osquery_nats_agent -> nats_service [dir="both"];
+        osquery_nats_agent -> files [dir="both"];
     }
 }

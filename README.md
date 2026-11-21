@@ -1,87 +1,66 @@
-# osquery-nats-sidecar
+# osquery-nats-agent
+
+An agent that reads SQL queries from input files and/or NATS subjects, executes them via `osqueryi`, and writes the results to output files and/or NATS subjects.
+
+![Architecture](docs/simple-deployment.png)
 
 ## Features
 
-- Subscribes to an input NATS subject for SQL queries to execute via `osqueryi` and writes the results to an output NATS subject
-- Writes query results to a local file in GZIP compressed JSONL format 
+- Configure the agent with a JSON or YAML file
+- Read SQL queries from input files or NATS subjects
+- Write query results to output files or NATS subjects
+- Dynamically partition<sub>1</sub> NATS subject names and input/output file paths using Jinja2 template strings (e.g. to create one NATS subject per OS type, or one output file per date and IP address)
+- Execute queries on an interval (e.g. to check for new processes every second)
+- Server to agent messages are JSON objects containing the query and optional platform restrictions (e.g. `{"query": "SELECT name, version FROM os_version;"}`).
+- Agent to server messages are always in JSON format and include the host metadata, the executed query, any error encountered, and the query results.
+- Results are differential: each run of a query reports only the rows added and removed since its previous run, and a run in which nothing changed reports nothing.
+
+<sub>1. Subjects are created by NATS as soon as they're written to.</sub>
+
+## Example use cases
+
+| Name | Description | Notes |
+|------|-------------|------|
+| Process monitoring | Track metadata of running processes, including process image metadata (e.g. the MD5, SHA-1, and SHA-256 hash of the file). | |
+| File integrity monitoring | Watch file and/or directories for changes. Level of granularity is set by the user defined queries (i.e. you could include file checksums, timestamps, permissions, etc.). | |
 
 ## Usage
 
+### Building the agent
+
+To build the agent:
+
 ```sh
-go build -o osquery-nats-sidecar ./cmd/agent
-./osquery-nats-sidecar -config config.json   # add -debug for verbose logging
+make build
 ```
 
-If the config file (default: `config.json`) does not exist, the agent writes one with the default settings below and starts with it. An existing config file is never modified.
+Or, equivalently:
 
-### Configuration
-
-Example configuration file:
-
-```json
-{
-    "nats_url": "nats://127.0.0.1:4222",
-    "input_subjects": ["osquery-queries"],
-    "output_subjects": ["osquery-results"],
-    "output_file": "osquery-results.jsonl.gz",
-    "query_timeout": "60s"
-}
+```sh
+mkdir -p bin/
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/osquery-nats-agent-linux-amd64 ./cmd/agent
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/osquery-nats-agent-darwin-amd64 ./cmd/agent
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o bin/osquery-nats-agent-windows-amd64.exe ./cmd/agent
 ```
 
-| Field | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `input_subjects` | yes | `["osquery-queries"]` in a generated config | Subjects to read queries from (NATS wildcards allowed) |
-| `output_subjects` | yes | `["osquery-results"]` in a generated config | Subjects to publish every result to; must not overlap `input_subjects` |
-| `nats_url` | no | `nats://127.0.0.1:4222` | NATS server URL(s), comma-separated |
-| `nats_credentials_path` | no | | Path to a NATS `.creds` file |
-| `output_file` | no | `osquery-results.jsonl.gz` | Local file that every result is appended to |
-| `osqueryi_path` | no | `osqueryi` (Windows: `C:\Program Files\osquery\osqueryi.exe`) | Path to `osqueryi` |
-| `query_timeout` | no | `60s` | Maximum run time of a single query |
+### Running the agent
 
-The agent continuously reads queries from the `input_subjects` and writes each result to every one of the `output_subjects` and to `output_file`. Every agent subscribed to an input subject runs every query that matches its platform. Unknown configuration fields are rejected.
+The agent needs a configuration file, passed with `-config`; `config.json` below stands for yours. See [agent configuration](docs/agent-configuration.md) for the options, and [`examples/config/`](examples/config/) for configurations to start from.
 
-`output_file` holds one JSON result per line. Each line is written as a separate gzip member, so the file is always readable (`zcat osquery-results.jsonl.gz | jq .`), even if the agent is killed. Results are appended across restarts.
+If running from source:
 
-Messages on the input subjects have the following schema:
-
-```json
-{
-    "query": "SELECT name, version FROM os_version;",
-    "platforms": ["darwin", "linux", "windows"]
-}
+```sh
+go run ./cmd/agent -config config.json
 ```
 
-Messages on the output subjects have the following schema:
+If using a compiled binary:
 
-```json
-{
-    "host": {
-        "id": "dbdac958-5491-4b13-8c3d-784428fad940",
-        "hostname": "lab-linux-1",
-        "network_interfaces": [
-            {
-                "name": "eth0",
-                "ip_addresses": ["127.0.0.1"],
-                "mac_address": "00:00:00:00:00:00"
-            }
-        ],
-        "platform": "linux"
-    },
-    "query": "SELECT name, version FROM os_version;",
-    "error": null,
-    "results": [
-        {
-            "name": "Ubuntu",
-            "version": "26.04.1 LTS (Resolute Raccoon)"
-        }
-    ]
-}
+```sh
+./bin/osquery-nats-agent-linux-amd64 -config config.json
 ```
 
-If the agent does not have a matching platform it will silently ignore the message. If `platforms` is omitted or empty, the query runs on every platform.
+To enable debug logging, add the `-debug` flag when running the agent:
 
-If the agent encounters an error while executing the query, it will populate the `error` field with the error message and set `results` to `null`.
-
-If a result is larger than the NATS server's max payload (1 MB by default), the agent publishes it with `results` set to `null` and an `error` explaining that the full result is in the local `output_file`.
-
-osquery returns every column value as a string (e.g. `"pid": "1"`).
+```sh
+./bin/osquery-nats-agent-linux-amd64 -config config.json -debug
+```

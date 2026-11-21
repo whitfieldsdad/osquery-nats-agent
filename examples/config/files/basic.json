@@ -1,0 +1,9 @@
+{
+  "input_files": [
+    "data/queries.json"
+  ],
+  "output_files": [
+    "data/results.jsonl.gz"
+  ],
+  "input_file_poll_interval": "1s"
+}

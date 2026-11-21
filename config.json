@@ -1,7 +1,0 @@
-{
-    "nats_url": "nats://127.0.0.1:4222",
-    "input_subjects": ["osquery-queries"],
-    "output_subjects": ["osquery-results"],
-    "output_file": "osquery-results.jsonl.gz",
-    "query_timeout": "60s"
-}

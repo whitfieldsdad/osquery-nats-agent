@@ -79,3 +79,44 @@ func networkInterfaces() []NetworkInterface {
 	}
 	return out
 }
+
+// PrimaryAddress returns the IP address and MAC address of the network interface used for
+// the default route. It finds the route by "connecting" a UDP socket to a documentation-only
+// address (RFC 5737 / RFC 3849), which sends no packets. If there is no default route it
+// falls back to the first up, non-loopback interface with an IP address.
+func PrimaryAddress() (ip, mac string, err error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", "", fmt.Errorf("list network interfaces: %w", err)
+	}
+
+	for _, probe := range []string{"192.0.2.1:9", "[2001:db8::1]:9"} {
+		conn, err := net.Dial("udp", probe)
+		if err != nil {
+			continue
+		}
+		local := conn.LocalAddr().(*net.UDPAddr).IP
+		conn.Close()
+		for _, iface := range ifaces {
+			addrs, _ := iface.Addrs()
+			for _, addr := range addrs {
+				if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.Equal(local) {
+					return local.String(), iface.HardwareAddr.String(), nil
+				}
+			}
+		}
+	}
+
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := iface.Addrs()
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLinkLocalUnicast() {
+				return ipnet.IP.String(), iface.HardwareAddr.String(), nil
+			}
+		}
+	}
+	return "", "", errors.New("no network interface with an IP address")
+}

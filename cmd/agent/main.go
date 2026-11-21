@@ -16,9 +16,15 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "config.json", "path to the JSON config file (a default one is created if it does not exist)")
+	configPath := flag.String("config", "", "path to the JSON config file (required)")
 	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
+
+	if *configPath == "" {
+		fmt.Fprintln(os.Stderr, "error: no configuration file provided; pass one with -config")
+		flag.Usage()
+		os.Exit(2)
+	}
 
 	level := slog.LevelInfo
 	if *debug {
@@ -33,12 +39,12 @@ func main() {
 }
 
 func run(configPath string, log *slog.Logger) error {
-	cfg, created, err := internal.LoadOrCreateConfig(configPath)
+	cfg, err := internal.LoadConfig(configPath)
 	if err != nil {
 		return err
 	}
-	if created {
-		log.Warn("no config file found; wrote a default one", "path", configPath)
+	for _, warning := range cfg.Warnings {
+		log.Warn("config: "+warning, "config", configPath)
 	}
 	internal.OsqueryBinary = cfg.OsqueryiPath
 
@@ -53,11 +59,34 @@ func run(configPath string, log *slog.Logger) error {
 		return fmt.Errorf("osqueryi (%s) is not usable: %w", cfg.OsqueryiPath, err)
 	}
 
-	out, err := internal.OpenGzipJSONL(cfg.OutputFile)
+	vars, err := internal.CurrentTemplateVars(hostID)
 	if err != nil {
-		return err
+		log.Warn("could not determine primary IP/MAC address for templates", "error", err)
+	}
+	if cfg, err = internal.ResolveSubjects(cfg, vars); err != nil {
+		return fmt.Errorf("invalid subjects in %s: %w", configPath, err)
+	}
+
+	if cfg, err = internal.RenderInputFiles(cfg, vars); err != nil {
+		return fmt.Errorf("invalid input_files in %s: %w", configPath, err)
+	}
+
+	pathAts := make([]func(time.Time) (string, error), 0, len(cfg.OutputFiles))
+	for _, file := range cfg.OutputFiles {
+		tpl, err := internal.NewOutputPathTemplate(file, vars)
+		if err != nil {
+			return err
+		}
+		pathAts = append(pathAts, tpl.PathAt)
+	}
+	out, err := internal.OpenGzipJSONLs(pathAts...)
+	if err != nil {
+		return fmt.Errorf("invalid output_files in %s: %w", configPath, err)
 	}
 	defer out.Close()
+	if err := internal.CheckInputOutputOverlap(cfg.InputFiles, out.Paths()); err != nil {
+		return fmt.Errorf("invalid input_files in %s: %w", configPath, err)
+	}
 
 	return internal.NewAgent(cfg, hostID, out, log).Run(ctx)
 }
