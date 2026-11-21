@@ -1,5 +1,7 @@
 # Development guide
 
+- osquery table schemas are available [here](https://osquery.io/schema/5.24.1/)
+
 ## Getting started
 
 ### Building 
@@ -90,3 +92,9 @@ windows-desktop | CHANGED | rc=0 >>
   {"name":"Microsoft Windows 11 Pro","version":"10.0.26200"}
 ]
 ```
+
+### Differential queries
+
+Scheduled queries are performed differentially by default - i.e. the previous query results are subtracted from the current query results to determine what's changed.
+
+Set `snapshot: true` in the configuration file to return the full resultset of each query on every run instead (see [snapshot results](docs/data-format.md#snapshot-results)).

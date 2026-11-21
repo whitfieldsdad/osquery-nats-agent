@@ -1,34 +1,48 @@
 # osquery-nats-agent
 
-An agent that reads SQL queries from input files and/or NATS subjects, executes them via `osqueryi`, and writes the results to output files and/or NATS subjects.
+An agent written in Go that:
+
+- Reads SQL queries from NATS subjects and/or files
+- Executes SQL queries via `osqueryi`; and
+- Writes the results to NATS subjects and/or files
 
 ![Architecture](docs/simple-deployment.png)
 
 ## Features
 
 - Configure the agent with a JSON or YAML file
-- Read SQL queries from input files or NATS subjects
-- Write query results to output files or NATS subjects
-- Dynamically partition<sub>1</sub> NATS subject names and input/output file paths using Jinja2 template strings (e.g. to create one NATS subject per OS type, or one output file per date and IP address)
-- Execute queries on an interval (e.g. to check for new processes every second)
-- Server to agent messages are JSON objects containing the query and optional platform restrictions (e.g. `{"query": "SELECT name, version FROM os_version;"}`).
-- Agent to server messages are always in JSON format and include the host metadata, the executed query, any error encountered, and the query results.
-- Results are differential: each run of a query reports only the rows added and removed since its previous run, and a run in which nothing changed reports nothing.
+- Read SQL queries from NATS subjects and/or files
+- Write query results to NATS subjects and/or files
+- Execute SQL queries on an interval (e.g. every second, minute, or hour)
+- Dynamically partition<sub>1</sub> NATS subject names and input/output file paths using Jinja2 template strings and automatically injected template variables (e.g. to read from and write to one NATS subject per OS type, or one output file per date and IP address)
 
 <sub>1. Subjects are created by NATS as soon as they're written to.</sub>
 
+## Design
+
+- Scheduled queries are performed differentially by default - i.e. the previous query results are subtracted from the current query results to determine what's changed. Set `snapshot: true` in the configuration file to return the full resultset of each query instead
+
+## Caveats
+
+- Some osquery tables are only accessible by privileged users.
+- The project is under active development, does not have a stable API, and is subject to change significantly at any time.
+
 ## Example use cases
 
-| Name | Description | Notes |
-|------|-------------|------|
-| Process monitoring | Track metadata of running processes, including process image metadata (e.g. the MD5, SHA-1, and SHA-256 hash of the file). | |
-| File integrity monitoring | Watch file and/or directories for changes. Level of granularity is set by the user defined queries (i.e. you could include file checksums, timestamps, permissions, etc.). | |
+| Name | Description |
+|------|-------------|
+| Distributed process monitoring | Track metadata of running processes, including process image metadata (e.g. the MD5, SHA-1, and SHA-256 hash of the file). |
+| Distributed file integrity monitoring | Watch file and/or directories for changes. The level of granularity is configured using user defined SQL queries (i.e. you could include file checksums, MACb timestamps, permissions, etc.). |
+
+## Goals
+
+- Simplify the process of performing distributed event tracing across multiple endpoints - particularly in environments without administrative privileges and in ephemeral environments where endpoints may frequently appear and disappear.
 
 ## Usage
 
 ### Building the agent
 
-To build the agent:
+To statically compile the agent for Windows, Linux, and macOS:
 
 ```sh
 make build
@@ -39,9 +53,17 @@ Or, equivalently:
 ```sh
 mkdir -p bin/
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/osquery-nats-agent-linux-amd64 ./cmd/agent
-CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/osquery-nats-agent-darwin-amd64 ./cmd/agent
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/osquery-nats-agent-darwin-arm64 ./cmd/agent
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o bin/osquery-nats-agent-windows-amd64.exe ./cmd/agent
 ```
+
+The following statically compiled binaries will be created in the `bin/` directory:
+
+| Path | OS type | OS architecture |
+|------|---------|----------------|
+| `bin/osquery-nats-agent-windows-amd64.exe` | Windows | amd64 |
+| `bin/osquery-nats-agent-linux-amd64` | Linux | amd64 |
+| `bin/osquery-nats-agent-darwin-arm64` | macOS | arm64 |
 
 ### Running the agent
 
@@ -57,10 +79,16 @@ If using a compiled binary:
 
 ```sh
 ./bin/osquery-nats-agent-linux-amd64 -config config.json
+./bin/osquery-nats-agent-darwin-arm64 -config config.json
+./bin/osquery-nats-agent-windows-amd64.exe -config config.json
 ```
 
 To enable debug logging, add the `-debug` flag when running the agent:
 
 ```sh
-./bin/osquery-nats-agent-linux-amd64 -config config.json -debug
+go run ./cmd/agent/main.go -config examples/config/files/processes.yaml -debug
+```
+
+```sh
+go run ./cmd/agent/main.go -config examples/config/files/processes.yaml -debug
 ```
