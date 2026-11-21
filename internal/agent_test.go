@@ -467,6 +467,83 @@ func TestQueriesAreDifferential(t *testing.T) {
 	}
 }
 
+func TestSnapshotQueries(t *testing.T) {
+	row := func(pid int) map[string]any { return map[string]any{"pid": float64(pid)} }
+	// What each run of each query returns, in order. An error is a failed run.
+	runs := map[string][]any{
+		"SELECT pid FROM processes;": {
+			[]map[string]any{row(1), row(2)},
+			[]map[string]any{row(1), row(2)}, // unchanged: delivered in full again
+			errors.New("osqueryi crashed"),
+			[]map[string]any{row(2), row(3)},
+			[]map[string]any(nil), // no rows: delivered as an empty result
+		},
+		"SELECT 1;": {
+			[]map[string]any{{"1": "1"}},
+		},
+	}
+	var mu sync.Mutex
+	path := filepath.Join(t.TempDir(), "results.jsonl.gz")
+	out, err := OpenGzipJSONLs(func(time.Time) (string, error) { return path, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{
+		cfg: Config{QueryTimeout: Duration(time.Minute), Snapshot: true},
+		out: out,
+		log: slog.New(slog.DiscardHandler),
+		now: time.Now,
+		query: func(_ context.Context, query string) ([]map[string]any, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			next := runs[query][0]
+			runs[query] = runs[query][1:]
+			if err, ok := next.(error); ok {
+				return nil, err
+			}
+			return next.([]map[string]any), nil
+		},
+	}
+
+	ps := QueryRequest{Query: "SELECT pid FROM processes;"}
+	for range 5 {
+		a.runRequest(ps)
+	}
+	// A scheduled query runs once straight away; with ctx already cancelled, it then stops.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	a.runSchedule(ctx, ScheduledQuery{Name: "one", Query: "SELECT 1;", Interval: 60})
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []QueryResult
+	for _, line := range readGzipJSONL(t, path) {
+		var r QueryResult
+		if err := json.Unmarshal([]byte(line), &r); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(line, `"results":`) || strings.Contains(line, `"removed"`) {
+			t.Errorf("result %s: want a results list and no removed list", line)
+		}
+		got = append(got, QueryResult{Name: r.Name, Query: r.Query, Error: r.Error, Results: r.Results, Removed: r.Removed})
+	}
+	want := []QueryResult{
+		{Query: ps.Query, Results: []map[string]any{row(1), row(2)}},
+		{Query: ps.Query, Results: []map[string]any{row(1), row(2)}},
+		{Query: ps.Query, Error: ptr("osqueryi crashed")},
+		{Query: ps.Query, Results: []map[string]any{row(2), row(3)}},
+		{Query: ps.Query, Results: []map[string]any{}},
+		{Name: "one", Query: "SELECT 1;", Results: []map[string]any{{"1": "1"}}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("delivered:\n%+v\nwant:\n%+v", got, want)
+	}
+	if len(a.baselines) != 0 {
+		t.Errorf("%d baselines kept in snapshot mode, want none", len(a.baselines))
+	}
+}
+
 func TestHashPrefixes(t *testing.T) {
 	data := []byte("SELECT 1;\nSELECT 2;\n")
 	nSum, sizeSum, err := hashPrefixes(bytes.NewReader(data), 10, int64(len(data)))

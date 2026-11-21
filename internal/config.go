@@ -74,10 +74,15 @@ type Config struct {
 	QueryTimeout Duration `json:"query_timeout"`
 	// ScheduledQueries are run periodically, in addition to queries received over NATS.
 	ScheduledQueries []ScheduledQuery `json:"scheduled_queries,omitempty"`
+	// Snapshot makes every run of every query deliver all of the rows it returned. By default
+	// (false), queries are differential: each run delivers only the rows added and removed
+	// since the query's previous successful run.
+	Snapshot bool `json:"snapshot"`
 	// MaxCachedQueries is how many queries received over NATS or read from input files have
 	// their previous results kept, to compare their next run with. When there are more, the
 	// least recently run query's results are dropped, and its next run reports every row.
-	// (Scheduled queries always keep theirs.) Defaults to DefaultMaxCachedQueries.
+	// (Scheduled queries always keep theirs.) Defaults to DefaultMaxCachedQueries. It has no
+	// effect when Snapshot is set, as no previous results are kept.
 	MaxCachedQueries int `json:"max_cached_queries"`
 
 	// Warnings describes problems LoadConfig found that do not stop the config from loading,

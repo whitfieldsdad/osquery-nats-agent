@@ -42,10 +42,12 @@ type QueryResult struct {
 	Query string  `json:"query"`
 	Error *string `json:"error"`
 	// Results holds the rows returned by the query that are new or changed since its previous
-	// successful run (every row, on its first run).
+	// successful run (every row, on its first run). With Config.Snapshot set, it holds every
+	// row the query returned.
 	Results []map[string]any `json:"results"`
 	// Removed holds the rows that were returned by the query's previous successful run but
-	// not by this one. A changed row appears in both Removed (old) and Results (new).
+	// not by this one. A changed row appears in both Removed (old) and Results (new). It is
+	// always empty with Config.Snapshot set.
 	Removed []map[string]any `json:"removed,omitempty"`
 }
 
@@ -68,8 +70,9 @@ func ParseQueryRequest(data []byte) (QueryRequest, error) {
 }
 
 // Agent executes queries received over NATS, read from input files and scheduled in its
-// config with osqueryi, and delivers the results differentially: each run of a query
-// delivers only the rows that changed since its previous successful run.
+// config with osqueryi, and delivers the results. By default they are delivered
+// differentially: each run of a query delivers only the rows that changed since its previous
+// successful run. With cfg.Snapshot set, each run delivers every row.
 type Agent struct {
 	cfg    Config
 	hostID string
@@ -127,6 +130,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		"input_subjects", a.cfg.InputSubjects,
 		"output_subjects", a.cfg.OutputSubjects,
 		"output_files", a.out.Paths(),
+		"snapshot", a.cfg.Snapshot,
 		"platform", Platform(),
 		"host_id", a.hostID,
 	)
@@ -499,7 +503,12 @@ func (a *Agent) runRequest(req QueryRequest, source ...any) bool {
 			append(source, "query", req.Query, "platforms", req.Platforms)...)
 		return false
 	}
-	a.runDiff(a.baselineFor(req.Query), "", req.Query, a.log.With(append(source, "query", req.Query)...))
+	log := a.log.With(append(source, "query", req.Query)...)
+	if a.cfg.Snapshot {
+		a.runSnapshot("", req.Query, log)
+	} else {
+		a.runDiff(a.baselineFor(req.Query), "", req.Query, log)
+	}
 	return true
 }
 
@@ -564,7 +573,11 @@ func (a *Agent) runSchedule(ctx context.Context, sq ScheduledQuery) {
 
 	var b baseline
 	for {
-		a.runDiff(&b, sq.Name, sq.Query, log)
+		if a.cfg.Snapshot {
+			a.runSnapshot(sq.Name, sq.Query, log)
+		} else {
+			a.runDiff(&b, sq.Name, sq.Query, log)
+		}
 
 		select {
 		case <-ctx.Done():
@@ -612,6 +625,27 @@ func (a *Agent) runDiff(b *baseline, name, query string, log *slog.Logger) {
 		return
 	}
 	b.rows = rows
+}
+
+// runSnapshot runs query and delivers every row it returned, even when there are none, so
+// that each result is complete on its own. A failed run delivers an error result. A result
+// that could not be delivered in full is not retried, as the next run delivers a newer
+// snapshot. name is the scheduled query's name, if any.
+func (a *Agent) runSnapshot(name, query string, log *slog.Logger) {
+	start := time.Now()
+	rows, err := a.execute(query)
+	if err != nil {
+		log.Warn("query failed", "error", err, "duration", time.Since(start))
+		a.deliver(a.newResult(name, query, nil, err))
+		return
+	}
+	if rows == nil {
+		rows = []map[string]any{} // encode as [], not null
+	}
+	log.Info("query succeeded", "rows", len(rows), "duration", time.Since(start))
+	if !a.deliver(a.newResult(name, query, rows, nil)) {
+		log.Warn("result was not fully delivered")
+	}
 }
 
 // changeSummary describes how many of total rows changed, e.g. "5/20 rows changed (25%)".

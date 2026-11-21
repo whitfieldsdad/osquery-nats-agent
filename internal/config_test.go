@@ -230,6 +230,7 @@ output_subjects:
   - osquery.results.{{ platform }}
 output_files: []
 query_timeout: 30s
+snapshot: true
 scheduled_queries:
   - name: processes
     query: |
@@ -244,6 +245,7 @@ scheduled_queries:
 		"output_subjects": ["osquery.results.{{ platform }}"],
 		"output_files": [],
 		"query_timeout": "30s",
+		"snapshot": true,
 		"scheduled_queries": [
 			{"name": "processes", "query": "SELECT pid, name\nFROM processes;\n", "interval": 15, "platforms": ["linux"]}
 		]
@@ -292,6 +294,25 @@ func TestLoadConfigExamples(t *testing.T) {
 		if _, err := LoadConfig(path); err != nil {
 			t.Errorf("%s: %v", path, err)
 		}
+	}
+}
+
+func TestLoadConfigSnapshot(t *testing.T) {
+	for body, want := range map[string]bool{
+		`{"input_subjects": ["q"]}`:                    false, // differential by default
+		`{"input_subjects": ["q"], "snapshot": false}`: false,
+		`{"input_subjects": ["q"], "snapshot": true}`:  true,
+	} {
+		cfg, err := LoadConfig(writeConfig(t, body))
+		if err != nil {
+			t.Fatalf("%s: %v", body, err)
+		}
+		if cfg.Snapshot != want {
+			t.Errorf("%s: Snapshot = %v, want %v", body, cfg.Snapshot, want)
+		}
+	}
+	if _, err := LoadConfig(writeConfig(t, `{"input_subjects": ["q"], "snapshot": "yes"}`)); err == nil {
+		t.Error(`"snapshot": "yes" was accepted; want an error`)
 	}
 }
 
