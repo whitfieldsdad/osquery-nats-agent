@@ -14,9 +14,9 @@ An agent written in Go that:
 - Read SQL queries from NATS subjects and/or files
 - Write query results to NATS subjects and/or files
 - Execute SQL queries on an interval (e.g. every second, minute, or hour)
-- Dynamically partition NATS subject names<sub>1</sub> and input/output file paths using Jinja2 template strings and automatically injected template variables (e.g. to read from and write to one NATS subject per OS type, or one output file per date and IP address)
+- Dynamically partition NATS subject names<sub>2</sub> and input/output file paths using Jinja2 template strings and automatically injected template variables (e.g. to read from and write to one NATS subject per OS type, or one output file per date and IP address)
 
-<sub>1. Subjects are created by NATS as soon as they're written to.</sub>
+<sub>2. Subjects are created by NATS as soon as they're written to.</sub>
 
 ## Design
 
