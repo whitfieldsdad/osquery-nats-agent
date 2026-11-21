@@ -1,0 +1,9 @@
+SELECT
+    uuid,
+    "uid",
+    "gid",
+    username,
+    "description",
+    directory,
+    shell,
+FROM users;

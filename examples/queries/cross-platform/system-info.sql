@@ -1,0 +1,23 @@
+SELECT
+    uuid,
+    hostname,
+    computer_name,
+    local_hostname,
+    cpu_type,
+    cpu_subtype,
+    emulated_cpu_type,
+    TRIM(cpu_brand) AS cpu_brand,
+    cpu_physical_cores,
+    cpu_logical_cores,
+    cpu_sockets,
+    cpu_microcode,
+    physical_memory / 1024 / 1024 / 1024 AS total_physical_memory_gb,
+    hardware_vendor,
+    hardware_model,
+    hardware_version,
+    hardware_serial,
+    board_vendor,
+    board_model,
+    board_version,
+    board_serial
+FROM system_info;
