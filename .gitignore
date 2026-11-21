@@ -1,5 +1,4 @@
-# Build output (see Makefile)
 bin/
-
-# Query results and other runtime data
 data/
+
+*.jsonl.gz
