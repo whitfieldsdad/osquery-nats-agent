@@ -1,7 +1,4 @@
 {
-    "input_files": [
-        "osquery-queries.jsonl"
-    ],
     "output_files": [
         "osquery-results.jsonl.gz"
     ],

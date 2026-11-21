@@ -1,0 +1,9 @@
+output_files:
+  - osquery-results.jsonl.gz
+scheduled_queries:
+  - query: |
+      SELECT 
+        name, 
+        version 
+      FROM os_version;
+    interval: 1
