@@ -1,0 +1,20 @@
+digraph G {
+    node [shape=box];
+    edge [color=blue];
+    
+    subgraph cluster_server {
+        label="Server";
+
+        nats_service [label="NATS"];
+    }
+
+    subgraph cluster_agent {
+        label="Agent";
+
+        osquery_nats_sidecar [label="osquery/NATS sidecar"];
+        osqueryi;
+
+        osquery_nats_sidecar -> nats_service;
+        osquery_nats_sidecar -> osqueryi;
+    }
+}
