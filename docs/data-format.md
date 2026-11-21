@@ -40,7 +40,7 @@ Outbound messages are JSON objects with the following structure. `date` and `tim
 
 ## Differential results
 
-Every query's results are differential. The first time a query runs, `results` holds every row it returned. After that, each run reports only what changed since the query's previous successful run:
+By default (`"snapshot": false`), every query's results are differential. The first time a query runs, `results` holds every row it returned. After that, each run reports only what changed since the query's previous successful run:
 
 - `results` holds the rows that are new or changed.
 - `removed` holds the rows that are gone. It is left out when empty.
@@ -51,6 +51,17 @@ Every query's results are differential. The first time a query runs, `results` h
 
 Each scheduled query is compared with its own previous run. Queries received over NATS or read from input files are compared with the previous run of the same SQL, wherever it came from. The agent keeps the previous results of the `max_cached_queries` (by default 10,000) most recently run of these queries; a query whose previous results were dropped reports all of its rows again. Previous results are kept in memory only, so after the agent restarts every query reports all of its rows again.
 
-A result too large for one NATS message (the server's max payload, 1 MB by default) is split across several messages. Each is a complete result with some of the rows, so they can be processed independently. Output files always get the whole result in one record. A single row too large for a message on its own is left out of the published messages, and a message with an `error` naming the output files holding it is sent in its place.
-
 The agent logs how many rows changed on each run, e.g. `changes="5/20 rows changed (25%)"`. Changed rows are those added plus those removed; the total also counts the rows that were unchanged.
+
+## Snapshot results
+
+With `"snapshot": true` in the [agent configuration](agent-configuration.md), every run of every query reports all of the rows it returned, so each result is complete on its own:
+
+- `results` holds every row the query returned. It is `[]` if there were none: a run that returns no rows still sends a message.
+- `removed` is never sent.
+- A failed run sends a message with `error` set and no rows.
+- No previous results are kept, so `max_cached_queries` has no effect. A result that cannot be delivered to every output file and output subject is not sent again: the next run sends a newer snapshot.
+
+## Large results
+
+A result too large for one NATS message (the server's max payload, 1 MB by default) is split across several messages. Each is a complete result with some of the rows, so they can be processed independently. Output files always get the whole result in one record. A single row too large for a message on its own is left out of the published messages, and a message with an `error` naming the output files holding it is sent in its place.

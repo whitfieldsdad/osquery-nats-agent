@@ -47,7 +47,8 @@ Agent behaviour:
 | Property | Description | Default |
 |---------|-------------|---------|
 | `query_timeout` | Timeout for query execution | `60s` |
-| `max_cached_queries` | How many queries received over NATS or read from input files keep their previous results, to report only what changed on their next run (see [differential results](data-format.md#differential-results)). When there are more, the least recently run query's results are dropped, and its next run reports every row. Scheduled queries always keep theirs. | `10000` |
+| `snapshot` | If `true`, every run of every query reports all of the rows it returned (see [snapshot results](data-format.md#snapshot-results)). If `false`, each run reports only the rows added and removed since the query's previous run (see [differential results](data-format.md#differential-results)). | `false` |
+| `max_cached_queries` | How many queries received over NATS or read from input files keep their previous results, to report only what changed on their next run (see [differential results](data-format.md#differential-results)). When there are more, the least recently run query's results are dropped, and its next run reports every row. Scheduled queries always keep theirs. Has no effect when `snapshot` is `true`. | `10000` |
 
 Automation:
 
